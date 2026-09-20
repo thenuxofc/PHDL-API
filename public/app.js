@@ -180,17 +180,20 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
           <td>
             <div class="action-buttons-cell">
-              <a href="${escapeHtml(d.url)}" target="_blank" download="${escapeHtml(video.title)}_${d.quality}.${d.format === 'mp4' ? 'mp4' : 'm3u8'}" class="btn-action btn-dl">
-                <i class="fa-solid fa-download"></i> Download
-              </a>
-              <button type="button" class="btn-action btn-copy" data-copy="${escapeHtml(d.url)}" title="Copy direct link">
-                <i class="fa-regular fa-copy"></i>
-              </button>
               ${d.format === 'hls' ? `
-                <button type="button" class="btn-action btn-play-stream" data-stream="${escapeHtml(d.url)}" title="Play this stream">
+                <button type="button" class="btn-action btn-play-stream" data-stream="${escapeHtml(d.url)}" title="Play in browser">
                   <i class="fa-solid fa-play"></i> Play
                 </button>
               ` : ''}
+              <button type="button" class="btn-action btn-copy" data-copy="${escapeHtml(d.url)}" title="Copy stream URL">
+                <i class="fa-regular fa-copy"></i> Copy Link
+              </button>
+              <button type="button" class="btn-action btn-ffmpeg" data-ffmpeg="ffmpeg -i &quot;${escapeHtml(d.url)}&quot; -c copy &quot;${escapeHtml(video.title || 'video')}.mp4&quot;" title="Copy FFmpeg download command">
+                <i class="fa-solid fa-terminal"></i> FFmpeg
+              </button>
+              <a href="${escapeHtml(d.url)}" target="_blank" rel="noreferrer" referrerpolicy="no-referrer" class="btn-action btn-dl" title="Open Stream">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+              </a>
             </div>
           </td>
         `;
@@ -206,11 +209,18 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }
 
-    // Attach copy & stream buttons
+    // Attach copy, stream & ffmpeg buttons
     dlTableBody.querySelectorAll('.btn-copy').forEach(btn => {
       btn.addEventListener('click', () => {
         const copyText = btn.getAttribute('data-copy');
         copyToClipboard(copyText, 'Stream link copied to clipboard!');
+      });
+    });
+
+    dlTableBody.querySelectorAll('.btn-ffmpeg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ffmpegCmd = btn.getAttribute('data-ffmpeg');
+        copyToClipboard(ffmpegCmd, 'FFmpeg download command copied!');
       });
     });
 

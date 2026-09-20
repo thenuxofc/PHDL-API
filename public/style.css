@@ -733,8 +733,13 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--accent-cyan);
   border: 1px solid rgba(6, 182, 212, 0.3);
 }
-.btn-play-stream:hover {
-  background: rgba(6, 182, 212, 0.25);
+.btn-ffmpeg {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-purple);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+.btn-ffmpeg:hover {
+  background: rgba(139, 92, 246, 0.25);
 }
 
 /* API Docs Section */
