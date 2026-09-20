@@ -1,6 +1,6 @@
 /**
  * Core Video Extractor for Pornhub Videos
- * Creator: thenux
+ * Creator: Thenux
  */
 
 const https = require('https');
@@ -10,10 +10,10 @@ const { extractViewKey, formatDuration, unescapeHtml } = require('./utils');
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 /**
- * Perform HTTPS GET request with browser headers and IPv4 priority
+ * Perform HTTPS GET request with browser headers and IPv4 priority, returning cookies
  * @param {string} targetUrl 
  * @param {object} customHeaders 
- * @returns {Promise<{status: number, headers: object, body: string}>}
+ * @returns {Promise<{status: number, headers: object, cookies: string, body: string}>}
  */
 function fetchUrl(targetUrl, customHeaders = {}) {
   return new Promise((resolve, reject) => {
@@ -39,10 +39,16 @@ function fetchUrl(targetUrl, customHeaders = {}) {
     };
 
     const req = client.request(options, (res) => {
+      const setCookies = res.headers['set-cookie'] || [];
+      const cookieHeader = setCookies.map(c => c.split(';')[0]).join('; ') + '; accessAgeDisclaimerPH=1; platform=pc';
+
       // Handle HTTP redirects (301, 302, 303, 307, 308)
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         const redirectUrl = new URL(res.headers.location, targetUrl).toString();
-        return fetchUrl(redirectUrl, customHeaders).then(resolve).catch(reject);
+        return fetchUrl(redirectUrl, {
+          ...customHeaders,
+          'Cookie': cookieHeader
+        }).then(resolve).catch(reject);
       }
 
       let data = '';
@@ -54,6 +60,7 @@ function fetchUrl(targetUrl, customHeaders = {}) {
         resolve({
           status: res.statusCode,
           headers: res.headers,
+          cookies: cookieHeader,
           body: data
         });
       });
@@ -75,18 +82,20 @@ function fetchUrl(targetUrl, customHeaders = {}) {
 /**
  * Extracts video details and download streams from Pornhub
  * @param {string} urlOrKey 
+ * @param {string} baseUrl - Host base URL for generating working stream proxy links
  * @returns {Promise<object>}
  */
-async function extractVideo(urlOrKey) {
+async function extractVideo(urlOrKey, baseUrl = '') {
   const viewkey = extractViewKey(urlOrKey);
   if (!viewkey) {
-    throw new Error('Invalid Pornhub URL or viewkey. Please provide a valid Pornhub video link (e.g., https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa) or viewkey.');
+    throw new Error('Invalid Pornhub URL or viewkey. Please provide a valid Pornhub video link or viewkey (e.g. 66db8ffed80aa).');
   }
 
   const primaryUrl = `https://www.pornhub.com/view_video.php?viewkey=${viewkey}`;
   let pageResponse = await fetchUrl(primaryUrl);
 
   let html = pageResponse.body;
+  let sessionCookies = pageResponse.cookies || 'accessAgeDisclaimerPH=1; platform=pc';
   let flashvars = null;
 
   // Try extracting flashvars from primary page
@@ -104,14 +113,18 @@ async function extractVideo(urlOrKey) {
     const embedUrl = `https://www.pornhub.com/embed/${viewkey}`;
     try {
       const embedResponse = await fetchUrl(embedUrl, {
-        'Referer': primaryUrl
+        'Referer': primaryUrl,
+        'Cookie': sessionCookies
       });
       const embedMatch = embedResponse.body.match(/flashvars_\d+\s*=\s*({[\s\S]*?});/);
       if (embedMatch) {
         flashvars = JSON.parse(embedMatch[1]);
+        if (embedResponse.cookies) {
+          sessionCookies = embedResponse.cookies;
+        }
       }
     } catch (err) {
-      // Continue to evaluate
+      // Continue
     }
   }
 
@@ -121,9 +134,9 @@ async function extractVideo(urlOrKey) {
       throw new Error('This video is unavailable or has been removed from Pornhub.');
     }
     if (html.includes('geo-restricted') || html.includes('not available in your country')) {
-      throw new Error('This video is geo-restricted.');
+      throw new Error('This video is geo-restricted in the requested region.');
     }
-    throw new Error('Failed to parse video stream metadata. The video may be private, premium-only, or require login.');
+    throw new Error('Failed to parse video stream metadata. The video may be private or requires authentication.');
   }
 
   // Extract metadata
@@ -133,7 +146,7 @@ async function extractVideo(urlOrKey) {
   const canonicalUrl = flashvars.link_url || primaryUrl;
   const isHD = Boolean(flashvars.isHD);
 
-  // Extract author / uploader from page HTML if available
+  // Extract author / uploader
   let author = 'Unknown';
   let authorUrl = '';
   const authorMatch = html.match(/class="usernameBadgesWrapper"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i) ||
@@ -163,7 +176,7 @@ async function extractVideo(urlOrKey) {
     rating = ratingMatch[1] + '%';
   }
 
-  // Extract action tags & categories
+  // Extract action tags
   const tags = [];
   if (flashvars.actionTags) {
     const parsedTags = flashvars.actionTags.split(',').map(t => t.split(':')[0].trim()).filter(Boolean);
@@ -173,9 +186,9 @@ async function extractVideo(urlOrKey) {
   // Process and organize media formats / streams
   const mediaDefinitions = flashvars.mediaDefinitions || [];
   const downloads = [];
+  const encodedCookies = encodeURIComponent(sessionCookies);
 
   for (const media of mediaDefinitions) {
-    // Only include streams that have a valid videoUrl
     if (!media.videoUrl || typeof media.videoUrl !== 'string' || media.videoUrl.trim() === '') {
       continue;
     }
@@ -185,6 +198,9 @@ async function extractVideo(urlOrKey) {
     const format = media.format || 'hls';
     const resolution = media.width && media.height ? `${media.width}x${media.height}` : (qualityNum ? `${qualityNum}p` : 'Auto');
 
+    // Build working stream proxy URL (bypasses Pornhub CDN referer & cookie blocks)
+    const streamProxyUrl = `${baseUrl}/api/stream?url=${encodeURIComponent(media.videoUrl)}&cookies=${encodedCookies}`;
+
     downloads.push({
       quality: qualityNum ? `${qualityNum}p` : (qualityStr || 'Default'),
       qualityValue: qualityNum,
@@ -192,7 +208,9 @@ async function extractVideo(urlOrKey) {
       resolution: resolution,
       width: media.width || null,
       height: media.height || null,
-      url: media.videoUrl,
+      streamUrl: streamProxyUrl, // Fully working proxy stream URL for players & downloads
+      url: streamProxyUrl,
+      rawUrl: media.videoUrl,    // Original CDN URL
       isDefault: Boolean(media.defaultQuality)
     });
   }
@@ -201,7 +219,7 @@ async function extractVideo(urlOrKey) {
   downloads.sort((a, b) => b.qualityValue - a.qualityValue);
 
   return {
-    creator: 'thenux',
+    creator: 'Thenux',
     status: 'success',
     timestamp: new Date().toISOString(),
     data: {
@@ -229,7 +247,70 @@ async function extractVideo(urlOrKey) {
   };
 }
 
+/**
+ * Proxies and rewrites HLS streams (.m3u8 playlists and .ts segments)
+ * @param {string} targetUrl 
+ * @param {string} cookies 
+ * @param {string} hostBaseUrl 
+ * @returns {Promise<{status: number, headers: object, body: Buffer}>}
+ */
+function proxyStream(targetUrl, cookies = '', hostBaseUrl = '') {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(targetUrl);
+    const client = urlObj.protocol === 'http:' ? http : https;
+
+    const req = client.get(targetUrl, {
+      family: 4,
+      headers: {
+        'User-Agent': DEFAULT_USER_AGENT,
+        'Referer': 'https://www.pornhub.com/',
+        'Cookie': cookies || 'accessAgeDisclaimerPH=1; platform=pc'
+      }
+    }, res => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        let buffer = Buffer.concat(chunks);
+        const contentType = res.headers['content-type'] || '';
+
+        // If it's an M3U8 playlist, rewrite relative URLs to pass through our proxy
+        if (contentType.includes('mpegurl') || contentType.includes('application/x-mpegURL') || targetUrl.includes('.m3u8')) {
+          let text = buffer.toString('utf-8');
+          const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+          const encodedCookies = encodeURIComponent(cookies);
+
+          // Replace relative lines (.m3u8 or .ts) with proxy URLs
+          const rewritten = text.split('\n').map(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) return line;
+
+            let absoluteUrl = trimmed;
+            if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+              absoluteUrl = baseUrl + trimmed;
+            }
+            return `${hostBaseUrl}/api/stream?url=${encodeURIComponent(absoluteUrl)}&cookies=${encodedCookies}`;
+          }).join('\n');
+
+          buffer = Buffer.from(rewritten, 'utf-8');
+        }
+
+        resolve({
+          status: res.statusCode,
+          headers: {
+            'Content-Type': contentType || 'application/vnd.apple.mpegurl',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: buffer
+        });
+      });
+    });
+
+    req.on('error', reject);
+  });
+}
+
 module.exports = {
   extractVideo,
+  proxyStream,
   fetchUrl
 };

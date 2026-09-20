@@ -1,9 +1,9 @@
 /**
- * Netlify Serverless Function - PH Downloader API
- * Creator: thenux
+ * Netlify Serverless Function - PH Downloader API & Stream Proxy
+ * Creator: Thenux
  */
 
-const { extractVideo } = require('../../src/extractor');
+const { extractVideo, proxyStream } = require('../../src/extractor');
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -38,7 +38,60 @@ exports.handler = async (event, context) => {
         bodyData = JSON.parse(event.body);
       }
     } catch (e) {
-      // Fallback for body parsing
+      // Fallback
+    }
+  }
+
+  const host = event.headers['host'] || 'thenuxphdl.netlify.app';
+  const proto = event.headers['x-forwarded-proto'] || 'https';
+  const hostBaseUrl = `${proto}://${host}`;
+
+  // Route 1: Stream & Segment Proxy (/api/stream)
+  if (path.includes('/api/stream') || path.endsWith('/stream')) {
+    const streamTargetUrl = query.url || query.src;
+    const cookies = query.cookies || '';
+
+    if (!streamTargetUrl) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Missing stream target url parameter' })
+      };
+    }
+
+    try {
+      const streamRes = await proxyStream(streamTargetUrl, cookies, hostBaseUrl);
+      const isMpegUrl = streamRes.headers['Content-Type']?.includes('mpegurl') || streamTargetUrl.includes('.m3u8');
+      
+      if (isMpegUrl) {
+        return {
+          statusCode: streamRes.status || 200,
+          headers: {
+            'Content-Type': 'application/vnd.apple.mpegurl',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache'
+          },
+          body: streamRes.body.toString('utf-8')
+        };
+      } else {
+        // Binary (.ts segment)
+        return {
+          statusCode: streamRes.status || 200,
+          isBase64Encoded: true,
+          headers: {
+            'Content-Type': 'video/mp2t',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400'
+          },
+          body: streamRes.body.toString('base64')
+        };
+      }
+    } catch (err) {
+      return {
+        statusCode: 502,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Stream proxy error: ' + err.message })
+      };
     }
   }
 
@@ -50,13 +103,17 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: CORS_HEADERS,
       body: JSON.stringify({
-        creator: 'thenux',
+        creator: 'Thenux',
         status: 'online',
-        name: 'Pornhub Video Downloader API',
-        version: '1.0.0',
-        documentation: 'https://github.com/thenux/phdl-api',
+        name: 'Pornhub Video Downloader & Stream API',
+        version: '1.2.0',
+        documentation: 'https://github.com/thenuxofc/PHDL-API',
+        official_store: 'https://www.thenuxofc.store',
+        ai_platform: 'https://ai.thenuxofc.store',
+        api_hub: 'https://api.thenuxofc.store',
         endpoints: {
           extract: 'GET /api/download?url={PORNHUB_URL_OR_VIEWKEY}',
+          stream: 'GET /api/stream?url={STREAM_URL}',
           info: 'GET /api/info?url={PORNHUB_URL_OR_VIEWKEY}',
           post_convert: 'POST /api/convert (body: { "url": "..." })'
         },
@@ -70,7 +127,7 @@ exports.handler = async (event, context) => {
       statusCode: 400,
       headers: CORS_HEADERS,
       body: JSON.stringify({
-        creator: 'thenux',
+        creator: 'Thenux',
         status: 'error',
         message: 'Missing required parameter "url" or "viewkey". Example: /api/download?url=https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa'
       }, null, 2)
@@ -78,7 +135,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const result = await extractVideo(urlOrKey);
+    const result = await extractVideo(urlOrKey, hostBaseUrl);
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
@@ -89,7 +146,7 @@ exports.handler = async (event, context) => {
       statusCode: 422,
       headers: CORS_HEADERS,
       body: JSON.stringify({
-        creator: 'thenux',
+        creator: 'Thenux',
         status: 'error',
         message: error.message || 'An error occurred while extracting video metadata'
       }, null, 2)

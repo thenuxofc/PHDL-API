@@ -1,12 +1,12 @@
 /**
  * Standalone Local Development & Node.js Server
- * Creator: thenux
+ * Creator: Thenux
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { extractVideo } = require('./extractor');
+const { extractVideo, proxyStream } = require('./extractor');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -43,7 +43,6 @@ function serveStatic(res, filePath) {
   fs.readFile(filePath, (err, content) => {
     if (err) {
       if (err.code === 'ENOENT') {
-        // Fallback to index.html for SPA
         fs.readFile(path.join(PUBLIC_DIR, 'index.html'), (err2, fallbackContent) => {
           if (err2) {
             res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -71,21 +70,44 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost:' + PORT}`);
   const pathname = reqUrl.pathname;
+  const hostBaseUrl = `${reqUrl.protocol}//${req.headers.host || 'localhost:' + PORT}`;
 
-  // API Routes
+  // API Route: Stream Proxy (/api/stream)
+  if (pathname === '/api/stream' || pathname === '/.netlify/functions/api/stream') {
+    const streamTargetUrl = reqUrl.searchParams.get('url');
+    const cookies = reqUrl.searchParams.get('cookies') || '';
+
+    if (!streamTargetUrl) {
+      return sendJson(res, 400, { error: 'Missing stream target url parameter' });
+    }
+
+    try {
+      const streamRes = await proxyStream(streamTargetUrl, cookies, hostBaseUrl);
+      res.writeHead(streamRes.status || 200, streamRes.headers);
+      return res.end(streamRes.body);
+    } catch (err) {
+      return sendJson(res, 502, { error: 'Proxy error: ' + err.message });
+    }
+  }
+
+  // API Routes: Info, Extract, Health
   if (pathname.startsWith('/api') || pathname.startsWith('/.netlify/functions/api')) {
     const urlOrKey = reqUrl.searchParams.get('url') || reqUrl.searchParams.get('viewkey') || reqUrl.searchParams.get('id');
 
     if (req.method === 'GET' && (!urlOrKey && (pathname === '/api/health' || pathname === '/api' || pathname === '/api/' || pathname.endsWith('/api')))) {
       return sendJson(res, 200, {
-        creator: 'thenux',
+        creator: 'Thenux',
         status: 'online',
-        name: 'Pornhub Video Downloader API',
-        version: '1.0.0',
+        name: 'Pornhub Video Downloader & Stream API',
+        version: '1.2.0',
+        official_store: 'https://www.thenuxofc.store',
+        ai_platform: 'https://ai.thenuxofc.store',
+        api_hub: 'https://api.thenuxofc.store',
         endpoints: {
           extract: 'GET /api/download?url={PORNHUB_URL_OR_VIEWKEY}',
+          stream: 'GET /api/stream?url={STREAM_URL}',
           info: 'GET /api/info?url={PORNHUB_URL_OR_VIEWKEY}'
         },
         example: '/api/download?url=https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa'
@@ -108,17 +130,17 @@ const server = http.createServer(async (req, res) => {
 
           if (!postUrl) {
             return sendJson(res, 400, {
-              creator: 'thenux',
+              creator: 'Thenux',
               status: 'error',
               message: 'Missing "url" parameter in request body'
             });
           }
 
-          const result = await extractVideo(postUrl);
+          const result = await extractVideo(postUrl, hostBaseUrl);
           return sendJson(res, 200, result);
         } catch (err) {
           return sendJson(res, 422, {
-            creator: 'thenux',
+            creator: 'Thenux',
             status: 'error',
             message: err.message || 'Error parsing video'
           });
@@ -130,18 +152,18 @@ const server = http.createServer(async (req, res) => {
     // GET request with url parameter
     if (!urlOrKey) {
       return sendJson(res, 400, {
-        creator: 'thenux',
+        creator: 'Thenux',
         status: 'error',
         message: 'Missing required parameter "url" or "viewkey". Example: /api/download?url=https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa'
       });
     }
 
     try {
-      const result = await extractVideo(urlOrKey);
+      const result = await extractVideo(urlOrKey, hostBaseUrl);
       return sendJson(res, 200, result);
     } catch (err) {
       return sendJson(res, 422, {
-        creator: 'thenux',
+        creator: 'Thenux',
         status: 'error',
         message: err.message || 'Failed to extract video'
       });
@@ -156,7 +178,7 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   server.listen(PORT, () => {
     console.log(`=========================================`);
-    console.log(`⚡ PH Downloader API Server (by thenux)`);
+    console.log(`⚡ PH Downloader API Server (by Thenux)`);
     console.log(`🚀 Running at: http://localhost:${PORT}`);
     console.log(`📖 API Docs:   http://localhost:${PORT}/#api-docs`);
     console.log(`=========================================`);
