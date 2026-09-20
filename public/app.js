@@ -183,11 +183,14 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
           <td>
             <div class="action-buttons-cell">
+              <button type="button" class="btn-action btn-play-stream" data-stream="${escapeHtml(d.directUrl || dlUrl)}" title="Watch video in browser player">
+                <i class="fa-solid fa-play"></i> Play
+              </button>
               <a href="${escapeHtml(dlUrl)}" target="_blank" download="${escapeHtml(video.title)}_${d.quality}.mp4" class="btn-action btn-dl" style="font-weight: 700; letter-spacing: 0.02em;">
-                <i class="fa-solid fa-cloud-arrow-down"></i> Download MP4
+                <i class="fa-solid fa-cloud-arrow-down"></i> Download
               </a>
               <button type="button" class="btn-action btn-copy" data-copy="${escapeHtml(d.directUrl || dlUrl)}" title="Copy direct video link">
-                <i class="fa-regular fa-copy"></i> Copy Link
+                <i class="fa-regular fa-copy"></i>
               </button>
             </div>
           </td>
@@ -204,11 +207,18 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }
 
-    // Attach copy buttons
+    // Attach play & copy buttons
+    dlTableBody.querySelectorAll('.btn-play-stream').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const streamUrl = btn.getAttribute('data-stream');
+        playStream(streamUrl);
+      });
+    });
+
     dlTableBody.querySelectorAll('.btn-copy').forEach(btn => {
       btn.addEventListener('click', () => {
         const copyText = btn.getAttribute('data-copy');
-        copyToClipboard(copyText, 'Direct MP4 link copied to clipboard!');
+        copyToClipboard(copyText, 'Video link copied to clipboard!');
       });
     });
 
