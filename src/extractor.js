@@ -10,7 +10,7 @@ const { extractViewKey, formatDuration, unescapeHtml } = require('./utils');
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 /**
- * Perform HTTPS GET request with browser headers and IPv4 priority, returning cookies
+ * Perform HTTPS GET request with browser headers, IPv4 priority, and client IP forwarding
  * @param {string} targetUrl 
  * @param {object} customHeaders 
  * @returns {Promise<{status: number, headers: object, cookies: string, body: string}>}
@@ -25,7 +25,7 @@ function fetchUrl(targetUrl, customHeaders = {}) {
       port: urlObj.port || (urlObj.protocol === 'http:' ? 80 : 443),
       path: urlObj.pathname + urlObj.search,
       method: 'GET',
-      family: 4, // Force IPv4 to prevent connection hangs
+      family: 4, // Force IPv4
       timeout: 15000,
       headers: {
         'User-Agent': DEFAULT_USER_AGENT,
@@ -42,7 +42,7 @@ function fetchUrl(targetUrl, customHeaders = {}) {
       const setCookies = res.headers['set-cookie'] || [];
       const cookieHeader = setCookies.map(c => c.split(';')[0]).join('; ') + '; accessAgeDisclaimerPH=1; platform=pc';
 
-      // Handle HTTP redirects (301, 302, 303, 307, 308)
+      // Handle HTTP redirects
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         const redirectUrl = new URL(res.headers.location, targetUrl).toString();
         return fetchUrl(redirectUrl, {
@@ -80,19 +80,28 @@ function fetchUrl(targetUrl, customHeaders = {}) {
 }
 
 /**
- * Extracts direct MP4 and HLS video downloads from Pornhub
+ * Extracts direct MP4 and HLS video downloads from Pornhub, signed for the client's IP
  * @param {string} urlOrKey 
  * @param {string} baseUrl - Host base URL
+ * @param {string} clientIp - Client's actual IP address
  * @returns {Promise<object>}
  */
-async function extractVideo(urlOrKey, baseUrl = '') {
+async function extractVideo(urlOrKey, baseUrl = '', clientIp = '') {
   const viewkey = extractViewKey(urlOrKey);
   if (!viewkey) {
     throw new Error('Invalid Pornhub URL or viewkey. Please provide a valid Pornhub video link or viewkey (e.g. 66db8ffed80aa).');
   }
 
+  const ipHeaders = {};
+  if (clientIp) {
+    ipHeaders['X-Forwarded-For'] = clientIp;
+    ipHeaders['Client-IP'] = clientIp;
+    ipHeaders['X-Real-IP'] = clientIp;
+    ipHeaders['CF-Connecting-IP'] = clientIp;
+  }
+
   const primaryUrl = `https://www.pornhub.com/view_video.php?viewkey=${viewkey}`;
-  let pageResponse = await fetchUrl(primaryUrl);
+  let pageResponse = await fetchUrl(primaryUrl, ipHeaders);
 
   let html = pageResponse.body;
   let sessionCookies = pageResponse.cookies || 'accessAgeDisclaimerPH=1; platform=pc';
@@ -114,7 +123,8 @@ async function extractVideo(urlOrKey, baseUrl = '') {
     try {
       const embedResponse = await fetchUrl(embedUrl, {
         'Referer': primaryUrl,
-        'Cookie': sessionCookies
+        'Cookie': sessionCookies,
+        ...ipHeaders
       });
       const embedMatch = embedResponse.body.match(/flashvars_\d+\s*=\s*({[\s\S]*?});/);
       if (embedMatch) {
@@ -185,20 +195,20 @@ async function extractVideo(urlOrKey, baseUrl = '') {
   const mediaDefinitions = flashvars.mediaDefinitions || [];
   const downloads = [];
 
-  // Check if there is a remote MP4 endpoint (get_media) to fetch TRUE direct MP4 URLs
+  // Fetch true direct MP4 URLs signed for client's IP
   const mp4Endpoint = mediaDefinitions.find(m => m.format === 'mp4' && m.remote && m.videoUrl);
   if (mp4Endpoint && mp4Endpoint.videoUrl) {
     try {
       const getMediaRes = await fetchUrl(mp4Endpoint.videoUrl, {
         'Referer': primaryUrl,
-        'Cookie': sessionCookies
+        'Cookie': sessionCookies,
+        ...ipHeaders
       });
       const mp4List = JSON.parse(getMediaRes.body);
       if (Array.isArray(mp4List) && mp4List.length > 0) {
         for (const item of mp4List) {
           if (!item.videoUrl) continue;
           const qualityNum = parseInt(item.quality, 10) || 0;
-          const directDlUrl = `${baseUrl}/api/dl?url=${encodeURIComponent(item.videoUrl)}&title=${encodeURIComponent(title)}_${qualityNum}p.mp4`;
 
           downloads.push({
             quality: `${qualityNum}p`,
@@ -207,8 +217,8 @@ async function extractVideo(urlOrKey, baseUrl = '') {
             resolution: item.width && item.height ? `${item.width}x${item.height}` : `${qualityNum}p`,
             width: item.width || null,
             height: item.height || null,
-            downloadUrl: directDlUrl, // Direct 1-click MP4 file download
-            directUrl: item.videoUrl,  // Direct CDN MP4 URL
+            downloadUrl: item.videoUrl, // Direct signed MP4 URL for client IP
+            directUrl: item.videoUrl,
             isDefault: Boolean(item.defaultQuality),
             isDirectMp4: true
           });
@@ -225,10 +235,8 @@ async function extractVideo(urlOrKey, baseUrl = '') {
       const qualityStr = String(media.quality || '');
       const qualityNum = parseInt(qualityStr, 10) || 0;
       
-      // If we already have direct MP4 for this quality, skip duplicate HLS or mark as HLS
       const existingMp4 = downloads.find(d => d.qualityValue === qualityNum && d.format === 'mp4');
       if (!existingMp4) {
-        const streamProxyUrl = `${baseUrl}/api/stream?url=${encodeURIComponent(media.videoUrl)}&cookies=${encodeURIComponent(sessionCookies)}`;
         downloads.push({
           quality: qualityNum ? `${qualityNum}p` : (qualityStr || 'Default'),
           qualityValue: qualityNum,
@@ -236,7 +244,7 @@ async function extractVideo(urlOrKey, baseUrl = '') {
           resolution: media.width && media.height ? `${media.width}x${media.height}` : (qualityNum ? `${qualityNum}p` : 'Auto'),
           width: media.width || null,
           height: media.height || null,
-          downloadUrl: streamProxyUrl,
+          downloadUrl: media.videoUrl,
           directUrl: media.videoUrl,
           isDefault: Boolean(media.defaultQuality),
           isDirectMp4: false
@@ -252,6 +260,7 @@ async function extractVideo(urlOrKey, baseUrl = '') {
     creator: 'Thenux',
     status: 'success',
     timestamp: new Date().toISOString(),
+    client_ip: clientIp || null,
     data: {
       viewkey: viewkey,
       title: title,

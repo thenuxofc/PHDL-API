@@ -37,6 +37,17 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data, null, 2));
 }
 
+function getClientIp(req) {
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (xForwardedFor) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  return req.headers['client-ip'] || 
+         req.headers['x-real-ip'] || 
+         req.headers['cf-connecting-ip'] || 
+         req.socket.remoteAddress || '';
+}
+
 function serveStatic(res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
@@ -74,13 +85,13 @@ const server = http.createServer(async (req, res) => {
   const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost:' + PORT}`);
   const pathname = reqUrl.pathname;
   const hostBaseUrl = `${reqUrl.protocol}//${req.headers.host || 'localhost:' + PORT}`;
+  const clientIp = reqUrl.searchParams.get('ip') || getClientIp(req);
 
   // API Route: Direct File Downloader Pipe (/api/dl)
   if (pathname === '/api/dl' || pathname === '/.netlify/functions/api/dl') {
     const directUrl = reqUrl.searchParams.get('url');
     let filename = reqUrl.searchParams.get('title') || 'video.mp4';
     if (!filename.endsWith('.mp4')) filename += '.mp4';
-    // Clean filename
     filename = filename.replace(/[^\w\d_.-]/g, '_');
 
     if (!directUrl) {
@@ -128,7 +139,7 @@ const server = http.createServer(async (req, res) => {
         creator: 'Thenux',
         status: 'online',
         name: 'Pornhub Video Downloader & Direct MP4 API',
-        version: '1.3.0',
+        version: '1.4.0',
         official_store: 'https://www.thenuxofc.store',
         ai_platform: 'https://ai.thenuxofc.store',
         api_hub: 'https://api.thenuxofc.store',
@@ -163,7 +174,7 @@ const server = http.createServer(async (req, res) => {
             });
           }
 
-          const result = await extractVideo(postUrl, hostBaseUrl);
+          const result = await extractVideo(postUrl, hostBaseUrl, clientIp);
           return sendJson(res, 200, result);
         } catch (err) {
           return sendJson(res, 422, {
@@ -186,7 +197,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const result = await extractVideo(urlOrKey, hostBaseUrl);
+      const result = await extractVideo(urlOrKey, hostBaseUrl, clientIp);
       return sendJson(res, 200, result);
     } catch (err) {
       return sendJson(res, 422, {

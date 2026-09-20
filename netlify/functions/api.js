@@ -3,7 +3,6 @@
  * Creator: Thenux
  */
 
-const https = require('https');
 const { extractVideo, proxyStream } = require('../../src/extractor');
 
 const CORS_HEADERS = {
@@ -12,6 +11,18 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-Requested-With',
   'Content-Type': 'application/json; charset=utf-8'
 };
+
+function getClientIp(event) {
+  const headers = event.headers || {};
+  const xForwardedFor = headers['x-forwarded-for'];
+  if (xForwardedFor) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  return headers['x-nf-client-connection-ip'] || 
+         headers['client-ip'] || 
+         headers['x-real-ip'] || 
+         headers['cf-connecting-ip'] || '';
+}
 
 exports.handler = async (event, context) => {
   // Handle CORS preflight
@@ -46,8 +57,9 @@ exports.handler = async (event, context) => {
   const host = event.headers['host'] || 'thenuxphdl.netlify.app';
   const proto = event.headers['x-forwarded-proto'] || 'https';
   const hostBaseUrl = `${proto}://${host}`;
+  const clientIp = query.ip || getClientIp(event);
 
-  // Route 1: Direct File Download Route (/api/dl) - Redirects/Streams direct MP4
+  // Route 1: Direct File Download Route (/api/dl) - Redirects with attachment header
   if (path.includes('/api/dl') || path.endsWith('/dl')) {
     const directUrl = query.url;
     let filename = query.title || 'video.mp4';
@@ -62,7 +74,6 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Direct 302 Redirect with download headers
     return {
       statusCode: 302,
       headers: {
@@ -72,54 +83,6 @@ exports.handler = async (event, context) => {
       },
       body: ''
     };
-  }
-
-  // Route 2: Stream & Segment Proxy (/api/stream)
-  if (path.includes('/api/stream') || path.endsWith('/stream')) {
-    const streamTargetUrl = query.url || query.src;
-    const cookies = query.cookies || '';
-
-    if (!streamTargetUrl) {
-      return {
-        statusCode: 400,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ error: 'Missing stream target url parameter' })
-      };
-    }
-
-    try {
-      const streamRes = await proxyStream(streamTargetUrl, cookies, hostBaseUrl);
-      const isMpegUrl = streamRes.headers['Content-Type']?.includes('mpegurl') || streamTargetUrl.includes('.m3u8');
-      
-      if (isMpegUrl) {
-        return {
-          statusCode: streamRes.status || 200,
-          headers: {
-            'Content-Type': 'application/vnd.apple.mpegurl',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-cache'
-          },
-          body: streamRes.body.toString('utf-8')
-        };
-      } else {
-        return {
-          statusCode: streamRes.status || 200,
-          isBase64Encoded: true,
-          headers: {
-            'Content-Type': 'video/mp2t',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'public, max-age=86400'
-          },
-          body: streamRes.body.toString('base64')
-        };
-      }
-    } catch (err) {
-      return {
-        statusCode: 502,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ error: 'Stream proxy error: ' + err.message })
-      };
-    }
   }
 
   const urlOrKey = query.url || query.viewkey || query.id || bodyData.url || bodyData.sf_url || bodyData.viewkey;
@@ -133,7 +96,7 @@ exports.handler = async (event, context) => {
         creator: 'Thenux',
         status: 'online',
         name: 'Pornhub Video Downloader & Direct MP4 API',
-        version: '1.3.0',
+        version: '1.4.0',
         documentation: 'https://github.com/thenuxofc/PHDL-API',
         official_store: 'https://www.thenuxofc.store',
         ai_platform: 'https://ai.thenuxofc.store',
@@ -162,7 +125,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const result = await extractVideo(urlOrKey, hostBaseUrl);
+    const result = await extractVideo(urlOrKey, hostBaseUrl, clientIp);
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
