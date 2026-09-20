@@ -1,0 +1,24 @@
+{
+  "name": "phdl-api",
+  "version": "1.0.0",
+  "description": "High-speed Pornhub Video Downloader API and Web App by thenux. Deployable on Netlify & GitHub.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "pornhub-downloader",
+    "ph-downloader",
+    "video-downloader-api",
+    "pornhub-api",
+    "thenux",
+    "netlify-api"
+  ],
+  "author": "thenux",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
