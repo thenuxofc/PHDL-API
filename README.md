@@ -1,15 +1,16 @@
 # ⚡ PH Video Downloader API & Stream Extractor
 
 <p align="center">
+  <a href="https://thenuxphdl.netlify.app/"><img src="https://img.shields.io/badge/Live%20Demo-thenuxphdl.netlify.app-00c7b7?style=for-the-badge&logo=netlify&logoColor=white" alt="Live Demo"></a>
   <img src="https://img.shields.io/badge/Creator-Thenux-10b981?style=for-the-badge&logo=codeforces&logoColor=white" alt="Creator: Thenux">
-  <img src="https://img.shields.io/badge/Deploy-Netlify%20Ready-00c7b7?style=for-the-badge&logo=netlify&logoColor=white" alt="Netlify Deploy">
-  <img src="https://img.shields.io/badge/GitHub-thenuxofc%2FPHDL--API-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Repo">
+  <a href="https://github.com/thenuxofc/PHDL-API"><img src="https://img.shields.io/badge/GitHub-thenuxofc%2FPHDL--API-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Repo"></a>
   <img src="https://img.shields.io/badge/Node.js-%3E%3D18.0.0-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
 </p>
 
 ---
 
+> **🚀 Live Web App & API:** [https://thenuxphdl.netlify.app/](https://thenuxphdl.netlify.app/)  
 > **Engineered with ❤️ by Thenux**  
 > High-performance, zero-dependency Pornhub video downloader & metadata extraction REST API + modern web application. Optimized for **Netlify Serverless**, standalone Node.js servers, Telegram bots, Discord bots, and automation pipelines.
 
@@ -19,6 +20,7 @@
 
 | Platform | Link | Description |
 |---|---|---|
+| 🌐 **Live Web App & API** | [thenuxphdl.netlify.app](https://thenuxphdl.netlify.app/) | Official deployed downloader & REST API endpoint |
 | 🛍️ **Official Store** | [www.thenuxofc.store](https://www.thenuxofc.store) | Official scripts, software, premium bots & services |
 | 🤖 **Thenux AI** | [ai.thenuxofc.store](https://ai.thenuxofc.store) | Next-generation AI models, tools & intelligence |
 | ⚡ **Thenux API Hub** | [api.thenuxofc.store](https://api.thenuxofc.store) | Production-ready APIs for developers & creators |
@@ -42,15 +44,15 @@
 
 ### 1. Extract Video Download Streams & Metadata
 ```http
-GET /api/download?url={PORNHUB_URL_OR_VIEWKEY}
-GET /api/info?url={PORNHUB_URL_OR_VIEWKEY}
+GET https://thenuxphdl.netlify.app/api/download?url={PORNHUB_URL_OR_VIEWKEY}
+GET https://thenuxphdl.netlify.app/api/info?url={PORNHUB_URL_OR_VIEWKEY}
 ```
 
 #### Example Request:
 ```bash
-curl -X GET "https://api.thenuxofc.store/api/download?url=https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa"
+curl -X GET "https://thenuxphdl.netlify.app/api/download?url=https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa"
 ```
-*(Or query with raw viewkey: `/api/download?url=66db8ffed80aa`)*
+*(Or query with raw viewkey: `https://thenuxphdl.netlify.app/api/download?url=66db8ffed80aa`)*
 
 #### Example Response (`200 OK`):
 ```json
@@ -123,7 +125,7 @@ curl -X GET "https://api.thenuxofc.store/api/download?url=https://www.pornhub.co
 
 ### 2. POST Conversion Endpoint
 ```http
-POST /api/convert
+POST https://thenuxphdl.netlify.app/api/convert
 Content-Type: application/json
 
 {
@@ -135,7 +137,7 @@ Content-Type: application/json
 
 ### 3. API Health & Status
 ```http
-GET /api/health
+GET https://thenuxphdl.netlify.app/api/health
 ```
 
 ---
@@ -145,7 +147,7 @@ GET /api/health
 ### JavaScript / Node.js
 ```javascript
 const targetUrl = 'https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa';
-const response = await fetch(`https://your-domain.netlify.app/api/download?url=${encodeURIComponent(targetUrl)}`);
+const response = await fetch(`https://thenuxphdl.netlify.app/api/download?url=${encodeURIComponent(targetUrl)}`);
 const data = await response.json();
 
 console.log('Creator:', data.creator); // Thenux
@@ -157,7 +159,7 @@ console.log('Streams:', data.data.downloads);
 ```python
 import requests
 
-url = "https://your-domain.netlify.app/api/download"
+url = "https://thenuxphdl.netlify.app/api/download"
 params = {"url": "https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa"}
 
 res = requests.get(url, params=params)
@@ -172,7 +174,7 @@ for stream in data['data']['downloads']:
 ### PHP
 ```php
 <?php
-$url = "https://your-domain.netlify.app/api/download?url=" . urlencode("66db8ffed80aa");
+$url = "https://thenuxphdl.netlify.app/api/download?url=" . urlencode("66db8ffed80aa");
 $response = file_get_contents($url);
 $data = json_decode($response, true);
 
@@ -202,7 +204,7 @@ git push -u origin main
 4. Netlify automatically reads [`netlify.toml`](file:///d:/phdl-api/netlify.toml):
    - **Publish directory:** `public`
    - **Functions directory:** `netlify/functions`
-5. Click **"Deploy site"**. Your API and Web App will be live with free automatic SSL/HTTPS!
+5. Click **"Deploy site"**. Your API and Web App will be live at [https://thenuxphdl.netlify.app/](https://thenuxphdl.netlify.app/)!
 
 ---
 
@@ -223,6 +225,7 @@ Open [http://localhost:3000](http://localhost:3000) to view the live dashboard.
 ## 👨‍💻 Author & Credits
 
 - **Creator**: **Thenux**
+- **Live Demo**: [https://thenuxphdl.netlify.app/](https://thenuxphdl.netlify.app/)
 - **Official Store**: [www.thenuxofc.store](https://www.thenuxofc.store)
 - **AI Hub**: [ai.thenuxofc.store](https://ai.thenuxofc.store)
 - **API Services**: [api.thenuxofc.store](https://api.thenuxofc.store)
