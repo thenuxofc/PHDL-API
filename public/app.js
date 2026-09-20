@@ -165,6 +165,9 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (d.qualityValue >= 480) qClass = 'q-480';
         else if (d.qualityValue >= 240) qClass = 'q-240';
 
+        const isMp4 = d.format === 'mp4' || d.isDirectMp4;
+        const dlUrl = d.downloadUrl || d.directUrl || d.url;
+
         tr.innerHTML = `
           <td>
             <span class="quality-badge ${qClass}">
@@ -172,28 +175,20 @@ document.addEventListener('DOMContentLoaded', () => {
             </span>
           </td>
           <td>${escapeHtml(d.resolution || '-')}</td>
-          <td><span class="format-pill">${escapeHtml((d.format || 'HLS').toUpperCase())}</span></td>
-          <td style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            <a href="${escapeHtml(d.url)}" target="_blank" rel="noopener noreferrer" style="color: var(--text-muted); font-size: 0.8rem; text-decoration: none;">
-              ${escapeHtml(d.url.slice(0, 36))}...
+          <td><span class="format-pill" style="${isMp4 ? 'color: var(--accent-green); background: rgba(16, 185, 129, 0.1); font-weight: 700;' : ''}">${escapeHtml((d.format || 'MP4').toUpperCase())}</span></td>
+          <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <a href="${escapeHtml(d.directUrl || dlUrl)}" target="_blank" rel="noopener noreferrer" style="color: var(--text-muted); font-size: 0.8rem; text-decoration: none;">
+              ${escapeHtml((d.directUrl || dlUrl).slice(0, 32))}...
             </a>
           </td>
           <td>
             <div class="action-buttons-cell">
-              ${d.format === 'hls' ? `
-                <button type="button" class="btn-action btn-play-stream" data-stream="${escapeHtml(d.url)}" title="Play in browser">
-                  <i class="fa-solid fa-play"></i> Play
-                </button>
-              ` : ''}
-              <button type="button" class="btn-action btn-copy" data-copy="${escapeHtml(d.url)}" title="Copy stream URL">
+              <a href="${escapeHtml(dlUrl)}" target="_blank" download="${escapeHtml(video.title)}_${d.quality}.mp4" class="btn-action btn-dl" style="font-weight: 700; letter-spacing: 0.02em;">
+                <i class="fa-solid fa-cloud-arrow-down"></i> Download MP4
+              </a>
+              <button type="button" class="btn-action btn-copy" data-copy="${escapeHtml(d.directUrl || dlUrl)}" title="Copy direct video link">
                 <i class="fa-regular fa-copy"></i> Copy Link
               </button>
-              <button type="button" class="btn-action btn-ffmpeg" data-ffmpeg="ffmpeg -i &quot;${escapeHtml(d.url)}&quot; -c copy &quot;${escapeHtml(video.title || 'video')}.mp4&quot;" title="Copy FFmpeg download command">
-                <i class="fa-solid fa-terminal"></i> FFmpeg
-              </button>
-              <a href="${escapeHtml(d.url)}" target="_blank" rel="noreferrer" referrerpolicy="no-referrer" class="btn-action btn-dl" title="Open Stream">
-                <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
-              </a>
             </div>
           </td>
         `;
@@ -209,25 +204,11 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }
 
-    // Attach copy, stream & ffmpeg buttons
+    // Attach copy buttons
     dlTableBody.querySelectorAll('.btn-copy').forEach(btn => {
       btn.addEventListener('click', () => {
         const copyText = btn.getAttribute('data-copy');
-        copyToClipboard(copyText, 'Stream link copied to clipboard!');
-      });
-    });
-
-    dlTableBody.querySelectorAll('.btn-ffmpeg').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const ffmpegCmd = btn.getAttribute('data-ffmpeg');
-        copyToClipboard(ffmpegCmd, 'FFmpeg download command copied!');
-      });
-    });
-
-    dlTableBody.querySelectorAll('.btn-play-stream').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const streamUrl = btn.getAttribute('data-stream');
-        playStream(streamUrl);
+        copyToClipboard(copyText, 'Direct MP4 link copied to clipboard!');
       });
     });
 

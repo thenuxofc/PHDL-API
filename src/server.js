@@ -4,9 +4,10 @@
  */
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { extractVideo, proxyStream } = require('./extractor');
+const { extractVideo } = require('./extractor');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -27,7 +28,7 @@ const MIME_TYPES = {
 function setCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range, X-Requested-With');
 }
 
 function sendJson(res, statusCode, data) {
@@ -74,22 +75,48 @@ const server = http.createServer(async (req, res) => {
   const pathname = reqUrl.pathname;
   const hostBaseUrl = `${reqUrl.protocol}//${req.headers.host || 'localhost:' + PORT}`;
 
-  // API Route: Stream Proxy (/api/stream)
-  if (pathname === '/api/stream' || pathname === '/.netlify/functions/api/stream') {
-    const streamTargetUrl = reqUrl.searchParams.get('url');
-    const cookies = reqUrl.searchParams.get('cookies') || '';
+  // API Route: Direct File Downloader Pipe (/api/dl)
+  if (pathname === '/api/dl' || pathname === '/.netlify/functions/api/dl') {
+    const directUrl = reqUrl.searchParams.get('url');
+    let filename = reqUrl.searchParams.get('title') || 'video.mp4';
+    if (!filename.endsWith('.mp4')) filename += '.mp4';
+    // Clean filename
+    filename = filename.replace(/[^\w\d_.-]/g, '_');
 
-    if (!streamTargetUrl) {
-      return sendJson(res, 400, { error: 'Missing stream target url parameter' });
+    if (!directUrl) {
+      return sendJson(res, 400, { error: 'Missing direct download url parameter' });
     }
 
-    try {
-      const streamRes = await proxyStream(streamTargetUrl, cookies, hostBaseUrl);
-      res.writeHead(streamRes.status || 200, streamRes.headers);
-      return res.end(streamRes.body);
-    } catch (err) {
-      return sendJson(res, 502, { error: 'Proxy error: ' + err.message });
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Referer': 'https://www.pornhub.com/'
+    };
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
     }
+
+    const proxyReq = https.get(directUrl, { family: 4, headers }, (proxyRes) => {
+      const responseHeaders = {
+        'Content-Type': 'video/mp4',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': 'bytes'
+      };
+      if (proxyRes.headers['content-length']) {
+        responseHeaders['Content-Length'] = proxyRes.headers['content-length'];
+      }
+      if (proxyRes.headers['content-range']) {
+        responseHeaders['Content-Range'] = proxyRes.headers['content-range'];
+      }
+
+      res.writeHead(proxyRes.statusCode || 200, responseHeaders);
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+      return sendJson(res, 502, { error: 'Failed to stream video file: ' + err.message });
+    });
+    return;
   }
 
   // API Routes: Info, Extract, Health
@@ -100,14 +127,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         creator: 'Thenux',
         status: 'online',
-        name: 'Pornhub Video Downloader & Stream API',
-        version: '1.2.0',
+        name: 'Pornhub Video Downloader & Direct MP4 API',
+        version: '1.3.0',
         official_store: 'https://www.thenuxofc.store',
         ai_platform: 'https://ai.thenuxofc.store',
         api_hub: 'https://api.thenuxofc.store',
         endpoints: {
           extract: 'GET /api/download?url={PORNHUB_URL_OR_VIEWKEY}',
-          stream: 'GET /api/stream?url={STREAM_URL}',
+          direct_dl: 'GET /api/dl?url={MP4_URL}&title={FILENAME}',
           info: 'GET /api/info?url={PORNHUB_URL_OR_VIEWKEY}'
         },
         example: '/api/download?url=https://www.pornhub.com/view_video.php?viewkey=66db8ffed80aa'

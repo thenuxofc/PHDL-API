@@ -1,14 +1,15 @@
 /**
- * Netlify Serverless Function - PH Downloader API & Stream Proxy
+ * Netlify Serverless Function - PH Downloader API & Direct MP4 Downloader
  * Creator: Thenux
  */
 
+const https = require('https');
 const { extractVideo, proxyStream } = require('../../src/extractor');
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, X-Requested-With',
   'Content-Type': 'application/json; charset=utf-8'
 };
 
@@ -46,7 +47,34 @@ exports.handler = async (event, context) => {
   const proto = event.headers['x-forwarded-proto'] || 'https';
   const hostBaseUrl = `${proto}://${host}`;
 
-  // Route 1: Stream & Segment Proxy (/api/stream)
+  // Route 1: Direct File Download Route (/api/dl) - Redirects/Streams direct MP4
+  if (path.includes('/api/dl') || path.endsWith('/dl')) {
+    const directUrl = query.url;
+    let filename = query.title || 'video.mp4';
+    if (!filename.endsWith('.mp4')) filename += '.mp4';
+    filename = filename.replace(/[^\w\d_.-]/g, '_');
+
+    if (!directUrl) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Missing direct download url parameter' })
+      };
+    }
+
+    // Direct 302 Redirect with download headers
+    return {
+      statusCode: 302,
+      headers: {
+        'Location': directUrl,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: ''
+    };
+  }
+
+  // Route 2: Stream & Segment Proxy (/api/stream)
   if (path.includes('/api/stream') || path.endsWith('/stream')) {
     const streamTargetUrl = query.url || query.src;
     const cookies = query.cookies || '';
@@ -74,7 +102,6 @@ exports.handler = async (event, context) => {
           body: streamRes.body.toString('utf-8')
         };
       } else {
-        // Binary (.ts segment)
         return {
           statusCode: streamRes.status || 200,
           isBase64Encoded: true,
@@ -105,15 +132,15 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         creator: 'Thenux',
         status: 'online',
-        name: 'Pornhub Video Downloader & Stream API',
-        version: '1.2.0',
+        name: 'Pornhub Video Downloader & Direct MP4 API',
+        version: '1.3.0',
         documentation: 'https://github.com/thenuxofc/PHDL-API',
         official_store: 'https://www.thenuxofc.store',
         ai_platform: 'https://ai.thenuxofc.store',
         api_hub: 'https://api.thenuxofc.store',
         endpoints: {
           extract: 'GET /api/download?url={PORNHUB_URL_OR_VIEWKEY}',
-          stream: 'GET /api/stream?url={STREAM_URL}',
+          direct_dl: 'GET /api/dl?url={DIRECT_MP4_URL}&title={FILENAME}',
           info: 'GET /api/info?url={PORNHUB_URL_OR_VIEWKEY}',
           post_convert: 'POST /api/convert (body: { "url": "..." })'
         },

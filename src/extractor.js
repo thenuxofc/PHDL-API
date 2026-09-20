@@ -80,9 +80,9 @@ function fetchUrl(targetUrl, customHeaders = {}) {
 }
 
 /**
- * Extracts video details and download streams from Pornhub
+ * Extracts direct MP4 and HLS video downloads from Pornhub
  * @param {string} urlOrKey 
- * @param {string} baseUrl - Host base URL for generating working stream proxy links
+ * @param {string} baseUrl - Host base URL
  * @returns {Promise<object>}
  */
 async function extractVideo(urlOrKey, baseUrl = '') {
@@ -129,7 +129,6 @@ async function extractVideo(urlOrKey, baseUrl = '') {
   }
 
   if (!flashvars) {
-    // Check if video is deleted or unavailable
     if (html.includes('video has been removed') || html.includes('video is unavailable') || html.includes('flagged for review')) {
       throw new Error('This video is unavailable or has been removed from Pornhub.');
     }
@@ -183,36 +182,67 @@ async function extractVideo(urlOrKey, baseUrl = '') {
     tags.push(...parsedTags);
   }
 
-  // Process and organize media formats / streams
   const mediaDefinitions = flashvars.mediaDefinitions || [];
   const downloads = [];
-  const encodedCookies = encodeURIComponent(sessionCookies);
 
-  for (const media of mediaDefinitions) {
-    if (!media.videoUrl || typeof media.videoUrl !== 'string' || media.videoUrl.trim() === '') {
-      continue;
+  // Check if there is a remote MP4 endpoint (get_media) to fetch TRUE direct MP4 URLs
+  const mp4Endpoint = mediaDefinitions.find(m => m.format === 'mp4' && m.remote && m.videoUrl);
+  if (mp4Endpoint && mp4Endpoint.videoUrl) {
+    try {
+      const getMediaRes = await fetchUrl(mp4Endpoint.videoUrl, {
+        'Referer': primaryUrl,
+        'Cookie': sessionCookies
+      });
+      const mp4List = JSON.parse(getMediaRes.body);
+      if (Array.isArray(mp4List) && mp4List.length > 0) {
+        for (const item of mp4List) {
+          if (!item.videoUrl) continue;
+          const qualityNum = parseInt(item.quality, 10) || 0;
+          const directDlUrl = `${baseUrl}/api/dl?url=${encodeURIComponent(item.videoUrl)}&title=${encodeURIComponent(title)}_${qualityNum}p.mp4`;
+
+          downloads.push({
+            quality: `${qualityNum}p`,
+            qualityValue: qualityNum,
+            format: 'mp4',
+            resolution: item.width && item.height ? `${item.width}x${item.height}` : `${qualityNum}p`,
+            width: item.width || null,
+            height: item.height || null,
+            downloadUrl: directDlUrl, // Direct 1-click MP4 file download
+            directUrl: item.videoUrl,  // Direct CDN MP4 URL
+            isDefault: Boolean(item.defaultQuality),
+            isDirectMp4: true
+          });
+        }
+      }
+    } catch (e) {
+      // Fallback
     }
+  }
 
-    const qualityStr = String(media.quality || '');
-    const qualityNum = parseInt(qualityStr, 10) || 0;
-    const format = media.format || 'hls';
-    const resolution = media.width && media.height ? `${media.width}x${media.height}` : (qualityNum ? `${qualityNum}p` : 'Auto');
-
-    // Build working stream proxy URL (bypasses Pornhub CDN referer & cookie blocks)
-    const streamProxyUrl = `${baseUrl}/api/stream?url=${encodeURIComponent(media.videoUrl)}&cookies=${encodedCookies}`;
-
-    downloads.push({
-      quality: qualityNum ? `${qualityNum}p` : (qualityStr || 'Default'),
-      qualityValue: qualityNum,
-      format: format,
-      resolution: resolution,
-      width: media.width || null,
-      height: media.height || null,
-      streamUrl: streamProxyUrl, // Fully working proxy stream URL for players & downloads
-      url: streamProxyUrl,
-      rawUrl: media.videoUrl,    // Original CDN URL
-      isDefault: Boolean(media.defaultQuality)
-    });
+  // Also include HLS streams
+  for (const media of mediaDefinitions) {
+    if (media.format === 'hls' && media.videoUrl) {
+      const qualityStr = String(media.quality || '');
+      const qualityNum = parseInt(qualityStr, 10) || 0;
+      
+      // If we already have direct MP4 for this quality, skip duplicate HLS or mark as HLS
+      const existingMp4 = downloads.find(d => d.qualityValue === qualityNum && d.format === 'mp4');
+      if (!existingMp4) {
+        const streamProxyUrl = `${baseUrl}/api/stream?url=${encodeURIComponent(media.videoUrl)}&cookies=${encodeURIComponent(sessionCookies)}`;
+        downloads.push({
+          quality: qualityNum ? `${qualityNum}p` : (qualityStr || 'Default'),
+          qualityValue: qualityNum,
+          format: 'hls',
+          resolution: media.width && media.height ? `${media.width}x${media.height}` : (qualityNum ? `${qualityNum}p` : 'Auto'),
+          width: media.width || null,
+          height: media.height || null,
+          downloadUrl: streamProxyUrl,
+          directUrl: media.videoUrl,
+          isDefault: Boolean(media.defaultQuality),
+          isDirectMp4: false
+        });
+      }
+    }
   }
 
   // Sort downloads by quality descending (1080p -> 720p -> 480p -> 240p)
@@ -247,70 +277,7 @@ async function extractVideo(urlOrKey, baseUrl = '') {
   };
 }
 
-/**
- * Proxies and rewrites HLS streams (.m3u8 playlists and .ts segments)
- * @param {string} targetUrl 
- * @param {string} cookies 
- * @param {string} hostBaseUrl 
- * @returns {Promise<{status: number, headers: object, body: Buffer}>}
- */
-function proxyStream(targetUrl, cookies = '', hostBaseUrl = '') {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(targetUrl);
-    const client = urlObj.protocol === 'http:' ? http : https;
-
-    const req = client.get(targetUrl, {
-      family: 4,
-      headers: {
-        'User-Agent': DEFAULT_USER_AGENT,
-        'Referer': 'https://www.pornhub.com/',
-        'Cookie': cookies || 'accessAgeDisclaimerPH=1; platform=pc'
-      }
-    }, res => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => {
-        let buffer = Buffer.concat(chunks);
-        const contentType = res.headers['content-type'] || '';
-
-        // If it's an M3U8 playlist, rewrite relative URLs to pass through our proxy
-        if (contentType.includes('mpegurl') || contentType.includes('application/x-mpegURL') || targetUrl.includes('.m3u8')) {
-          let text = buffer.toString('utf-8');
-          const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-          const encodedCookies = encodeURIComponent(cookies);
-
-          // Replace relative lines (.m3u8 or .ts) with proxy URLs
-          const rewritten = text.split('\n').map(line => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) return line;
-
-            let absoluteUrl = trimmed;
-            if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-              absoluteUrl = baseUrl + trimmed;
-            }
-            return `${hostBaseUrl}/api/stream?url=${encodeURIComponent(absoluteUrl)}&cookies=${encodedCookies}`;
-          }).join('\n');
-
-          buffer = Buffer.from(rewritten, 'utf-8');
-        }
-
-        resolve({
-          status: res.statusCode,
-          headers: {
-            'Content-Type': contentType || 'application/vnd.apple.mpegurl',
-            'Access-Control-Allow-Origin': '*'
-          },
-          body: buffer
-        });
-      });
-    });
-
-    req.on('error', reject);
-  });
-}
-
 module.exports = {
   extractVideo,
-  proxyStream,
   fetchUrl
 };
